@@ -1,0 +1,77 @@
+---
+title: "Dynatrace Analytics Workshop"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r packages, include = FALSE}
+library(tidyverse)
+library(skimr)
+
+# datamodel
+library(datamodelr)
+library(DiagrammeR)
+```
+
+
+```{r data import, cache = TRUE}
+# import csvs
+filenames = list.files(path = "Olist_data/", pattern="*.csv")
+
+filepath <- paste0("Olist_data/", filenames)
+
+data <- lapply(filepath, read.csv) #import data in list
+
+#renaming
+library(stringr)
+df_names <- str_extract(filenames, '.*(?=\\.csv)')
+
+names(data) <- df_names
+```
+
+```{r}
+# summary of data frames
+lapply(data, skim)
+
+```
+
+Findings of first exploration: 
+
++ Table 1: Customer information  of 96.096 unique IDs including geolocation information
++ Table 2: Geoinformation that provides lat/lng coordinates for zipcodes
++ Table 3: Purchase data of 98.666 orders on position level (product) including seller information and prices 
++ Table 4: Payment information of 99.440 order
++ Table 5: Review information on 99.441 orders including reveiw messages, scores and timestamps
++ Table 6: Purchase data of 99.441 orders on order level including customer and order status information
++ Table 7: Product information of 32.951 product IDs
++ Table 8: Seller information of 3.095 seller IDs
++ Taable 9: Product category informatio that maps to english translation
+
+```{r}
+
+# create datamodel
+datamodel <- dm_from_data_frames(data) %>% 
+  dm_add_references( # add keys
+    ., 
+    olist_orders_dataset$customer_id == olist_customers_dataset$customer_id,
+    olist_order_reviews_dataset$order_id == olist_orders_dataset$order_id,
+    olist_order_payments_dataset$order_id == olist_orders_dataset$order_id,
+    olist_orders_dataset$order_id == olist_order_items_dataset$order_id,
+    olist_sellers_dataset$seller_id == olist_order_items_dataset$seller_id,
+    olist_products_dataset$product_id == olist_orders_items_dataset$product_id,
+    olist_sellers_dataset$seller_zip_code_prefix == olist_geolocation_dataset$geolocation_zip_code_prefix,
+    olist_customers_dataset$customer_zip_code_prefix == olist_geolocation_dataset$geolocation_zip_code_prefix,
+    olist_products_dataset$product_category_name == product_category_name_translation$`ï..product_category_name`
+
+    )
+
+# graph datamodel
+dm_create_graph(datamodel, rankdir = "BT", col_attr = c("column", "type")) %>% 
+  dm_render_graph()
+```
+
