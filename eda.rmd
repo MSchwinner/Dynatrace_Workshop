@@ -1,0 +1,36 @@
+---
+title: "Dynatrace Analytics Workshop - EDA"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+
+```{r packages, include = FALSE}
+library(tidyverse)
+library(skimr)
+
+# datamodel
+library(datamodelr)
+library(DiagrammeR)
+```
+
+
+```{r data import, cache = TRUE}
+# import csvs
+filenames = list.files(path = "Olist_data/", pattern="*.csv")
+
+filepath <- paste0("Olist_data/", filenames)
+
+data <- lapply(filepath, read.csv) #import data in list
+
+#renaming
+library(stringr)
+df_names <- str_extract(filenames, '.*(?=\\.csv)')
+
+names(data) <- df_names
+```

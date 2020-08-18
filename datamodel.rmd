@@ -1,5 +1,5 @@
 ---
-title: "Dynatrace Analytics Workshop"
+title: "Dynatrace Analytics Workshop - datamodel"
 output:
   html_document:
     code_folding: hide
