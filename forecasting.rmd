@@ -1,0 +1,191 @@
+---
+title: "Dynatrace Analytics Workshop - Orders Forecasting"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+
+```{r packages, include = FALSE, message = FALSE}
+library(tidyverse)
+library(skimr)
+library(stringr)
+library(lubridate)
+library(prophet)
+
+source("R/functions.R")
+```
+
+# Data import
+
+Import data in list via function Calll to import_csv_data().
+
+```{r data import, cache = TRUE}
+data <- import_csv_data(path = "Olist_data/")
+```
+
+# Analysis of Purchase-Behavior over time
+
+```{r}
+
+data[[6]] %>% 
+  mutate(order_purchase_date = as_date(order_purchase_timestamp)) %>% #date of purchase
+  group_by(order_purchase_date) %>% #group by date of purchase
+  count() %>% #summarize
+  arrange(order_purchase_date) %>% 
+  ggplot(., aes(x = order_purchase_date, y = n)) +
+  geom_line() + #line plot
+  theme_bw() +
+  labs(x = "Day", y = "Orders", title = "Orders by Day")
+
+```
+
+```{r}
+
+data[[6]] %>% 
+  mutate(order_purchase_month = format.Date(order_purchase_timestamp, "%Y%m")) %>% #month of purchase
+  group_by(order_purchase_month) %>% #group by date of purchase
+  count() %>% #summarize
+  arrange(order_purchase_month) %>% 
+  ggplot(., aes(x = order_purchase_month, y = n)) +
+  geom_col() + #barplot
+  theme_bw() +
+  labs(x = "Month", y = "Orders", title = "Orders by Month") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+
+data[[6]] %>% 
+  mutate(order_purchase_date = as_date(order_purchase_timestamp)) %>% #date of purchase
+  group_by(order_purchase_date) %>% #group by date of purchase
+  count() %>% #summarize
+  mutate(order_purchase_wday = wday(order_purchase_date, label = TRUE)) %>%  #weekday of purchase
+  group_by(order_purchase_wday) %>% 
+  summarize(mean_order = mean(n)) %>% 
+  ggplot(., aes(x = order_purchase_wday, y = mean_order)) +
+  geom_col() + #barplot
+  theme_bw() +
+  labs(x = "Weekday", y = "Mean Orders", title = "Orders by Month") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+Data Anomalies: 
+
++ Only a few purchases from September to October 2016
++ Outlier on 2017-11-24 with 1,176 Orders (No other day with more than 500 Orders)
++ Heavily decreasing number of parchases With end of August 2018 -> Probably due to time lag between order and delivery
+
+We observe a heavy growth in Orders up until January 2018 with a stagnation in 2018. There seems to be a weekly saisonality with less Orders on the weekend and most Orders at the beginning of the week on Monday and Tuesday.
+
+# Forecasting of daily Orders
+
+## Data Clean-Up
+
+To increase data quality, all data points before 2017-01-01 and after 2018-08-01 are excluded. Additionally the observation 2017-11-24 with 1,176 Orders is excluded to prepare the data for the forecasting algorithm.
+
+```{r}
+daily_orders <- data[[6]] %>% 
+  mutate(order_purchase_date = as_date(order_purchase_timestamp)) %>% #date of purchase
+  group_by(order_purchase_date) %>% #group by date of purchase
+  count() %>% #summarize
+  filter(order_purchase_date > "2017-01-01" &
+           order_purchase_date < "2018-08-01" & #exclude months with missing data
+           order_purchase_date != "2017-11-24") #exclude anomaly
+
+daily_orders %>% 
+  ggplot(., aes(x = order_purchase_date, y = n)) +
+  geom_line() + #line plot
+  theme_bw() +
+  labs(x = "Day", y = "Orders", title = "Orders by Day (clean)")
+```
+
+## Time Series Forecasting
+
+Daily Orders are forecasted with Facebook's open source Prophet Algorithm (https://facebook.github.io/prophet/). Prophet allows forecasting of time series data based on an additive component model. 
+
+```{r}
+# create prophet object
+daily_orders_prophet <- daily_orders %>% 
+  rename(ds = order_purchase_date, y = n) %>% 
+  prophet(yearly.seasonality = TRUE) #include yearly saisonality - tricky with this data!
+
+future <- make_future_dataframe(daily_orders_prophet, periods = 365) #prepare dataframe to predict in future
+
+forecast <- predict(daily_orders_prophet, future) #predict 
+
+```
+
+```{r}
+prophet_plot_components(daily_orders_prophet, forecast) #plot ts components
+```
+
+```{r}
+plot(daily_orders_prophet, forecast) + #plot data and predictions
+  theme_bw() 
+```
+
+## Evaluating Performance
+
+To evaluate the performance of the model, we compare the predictions for the first 15 days of August with the corresponding known values of daily orders.
+
+```{r}
+out_of_sample <- data[[6]] %>% 
+  mutate(order_purchase_date = as_date(order_purchase_timestamp)) %>% #date of purchase
+  group_by(order_purchase_date) %>% #group by date of purchase
+  count() %>% #summarize
+  filter(order_purchase_date >= "2018-08-01" &
+           order_purchase_date < "2018-08-16") %>% 
+  left_join(forecast %>% mutate(ds = as_date(ds)), by = c("order_purchase_date" = "ds"))
+
+# plot True vs. Predicted Values
+out_of_sample %>% 
+  ggplot(., aes(x = order_purchase_date)) +
+  geom_line(aes(y = n, color = "True Value")) +
+  geom_point(aes(y = n, color = "True Value")) +
+  geom_line(aes(y = yhat, color = "Predicted")) +
+  geom_point(aes(y = yhat, color = "Predicted")) +
+  theme_bw() +
+  labs(x = "Day", y = "Orders", title = "Out of Sample Test") +
+  expand_limits(y = 0)
+```
+
+```{r}
+#test statistics
+rmse <- sqrt(mean((out_of_sample$yhat - out_of_sample$n)^2))
+mae <- mean(abs(out_of_sample$yhat - out_of_sample$n))
+mape <-  mean(abs((out_of_sample$yhat - out_of_sample$n)/out_of_sample$n))
+```
+
+The out of sample test yields following results: Predictions for the first test period are on average `r round(mape*100,2)` % lower than the actual error (Mean Absolute Percentage Error ~ MAPE). The Root Mean Squared Error (RMSE) is `r round(rmse,2)` Orders and the Mean Absolute Error (MAE) `r round(mae,2)` Orders.
+
+## Predicting Monthly Sales
+
+```{r}
+future_orders_month <- forecast %>% 
+  filter(ds >= "2018-08-01") %>% 
+  transmute(order_purchase_date = as_date(ds),
+            n = yhat) %>% 
+  mutate(order_purchase_month = format.Date(order_purchase_date, "%Y%m")) %>% #month of purchase
+  group_by(order_purchase_month) %>% #group by date of purchase
+  summarize(n = sum(n)) %>% #summarize
+  arrange(order_purchase_month)
+
+history_orders_month <- daily_orders %>% 
+  mutate(order_purchase_month = format.Date(order_purchase_date, "%Y%m")) %>% #month of purchase
+  group_by(order_purchase_month) %>% #group by date of purchase
+  summarize(n = sum(n)) %>% #summarize
+  arrange(order_purchase_month)
+
+ggplot(history_orders_month, aes(x = order_purchase_month, y = n)) +
+  geom_col(aes(fill= "True Value")) +
+  geom_col(data = future_orders_month, aes(fill= "Predicted")) +
+  theme_bw() +
+  labs(x = "Month", y = "Orders", title = "Orders by Month") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+

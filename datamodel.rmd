@@ -59,11 +59,11 @@ datamodel <- dm_from_data_frames(data) %>%
   dm_add_references( # add keys
     ., 
     olist_orders_dataset$customer_id == olist_customers_dataset$customer_id,
-    olist_order_reviews_dataset$order_id == olist_orders_dataset$order_id,
-    olist_order_payments_dataset$order_id == olist_orders_dataset$order_id,
+    olist_orders_dataset$order_id == olist_order_reviews_dataset$order_id,
+    olist_orders_dataset$order_id ==olist_order_payments_dataset$order_id,
     olist_orders_dataset$order_id == olist_order_items_dataset$order_id,
-    olist_sellers_dataset$seller_id == olist_order_items_dataset$seller_id,
-    olist_products_dataset$product_id == olist_orders_items_dataset$product_id,
+    olist_order_items_dataset$seller_id == olist_sellers_dataset$seller_id,
+    olist_orders_items_dataset$product_id == olist_products_dataset$product_id,
     olist_sellers_dataset$seller_zip_code_prefix == olist_geolocation_dataset$geolocation_zip_code_prefix,
     olist_customers_dataset$customer_zip_code_prefix == olist_geolocation_dataset$geolocation_zip_code_prefix,
     olist_products_dataset$product_category_name == product_category_name_translation$`ï..product_category_name`
