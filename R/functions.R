@@ -15,3 +15,9 @@ import_csv_data <- function(path = NULL) {
   return(data)
   
 }
+
+bd <- function(x) {
+  
+  y <- paste0(format(round(x,1), big.mark = ","), " B$")
+  
+}

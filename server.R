@@ -5,8 +5,11 @@ server <- function(input, output, session) {
   orders_purchase <- reactive({
     
     data$olist_orders_dataset %>%
-      filter(as_date(order_purchase_timestamp) >= input$time[[1]] &
-               as_date(order_purchase_timestamp) <= input$time[[2]])
+      mutate(order_purchase_date = as_date(order_purchase_timestamp)) %>% 
+      filter(order_purchase_date >= input$time[[1]] &
+               order_purchase_date <= input$time[[2]]) %>% 
+      inner_join(data$olist_order_items_dataset, by = "order_id")
+      
   })
   
   orders_items <- reactive({
@@ -19,45 +22,51 @@ server <- function(input, output, session) {
 
     orders_items() %>%
       group_by(product_id) %>%
-      summarize(Orders = n(),
-                Revenue = sum(price),
+      summarize(Revenue = sum(price),
                 Freight = sum(freight_value)) %>% 
       mutate(Profit = round(Revenue - Freight,2),
              Margin = paste0(round(Profit / Revenue*100,2),"%")) %>% 
-      left_join(data$olist_products_dataset %>% select(product_id, product_category_name), by = "product_id") %>% 
-      arrange(desc(Orders))
+      left_join(data$olist_products_dataset %>% select(product_id, product_category_name), by = "product_id") 
+  })
+  
+  df_daily <- reactive({
+    
+    daily_df %>%
+      filter(as_date(order_purchase_date) >= input$time[[1]] &
+               as_date(order_purchase_date) <= input$time[[2]]) %>% 
+      mutate(Profit = Revenue - Freight)
+      
   })
 
 # Dashboard ---------------------------------------------------------------
 
   output$box_orders <- renderValueBox({
     valueBox(
-      length(unique(orders_purchase()$order_id)),
+      sum(df_daily()$Orders),
       "Orders", 
       color = "purple"
     )
   })
   
-  output$box_deliveries <- renderValueBox({
+  output$box_revenue_order <- renderValueBox({
     valueBox(
-      length(unique((orders_purchase() %>% filter(order_delivered_customer_date != ""))$order_id)),
-      "Successfull Deliveries", 
+      bd(sum(df_daily()$Revenue) / sum(df_daily()$Orders)),
+      "Revenue per Order", 
       color = "purple"
     )
   })
   
-  output$box_success <- renderValueBox({
+  output$box_profit_order <- renderValueBox({
     valueBox(
-      paste0(round(length(unique((orders_purchase() %>% filter(order_delivered_customer_date != ""))$order_id)) /
-        length(unique(orders_purchase()$order_id)) *100,1), " %"),
-      "Success Rate", 
+      bd(sum(df_daily()$Profit) / sum(df_daily()$Orders)),
+      "Profit per Order", 
       color = "purple"
     )
   })
   
   output$box_revenue <- renderValueBox({
     valueBox(
-      sum(product_df()$Revenue),
+      bd(sum(df_daily()$Revenue)),
       "Revenue", 
       color = "purple"
     )
@@ -65,7 +74,7 @@ server <- function(input, output, session) {
   
   output$box_profit <- renderValueBox({
     valueBox(
-      sum(product_df()$Profit),
+      bd(sum(df_daily()$Profit)),
       "Profit", 
       color = "purple"
     )
@@ -73,15 +82,57 @@ server <- function(input, output, session) {
   
   output$box_margin <- renderValueBox({
     valueBox(
-      paste0(round(sum(product_df()$Profit) / sum(product_df()$Revenue)*100,1),"%"),
+      paste0(round(sum(df_daily()$Profit) / sum(df_daily()$Revenue)*100,1),"%"),
       "Margin", 
       color = "purple"
     )
   })
   
+
+# product -----------------------------------------------------------------
+
+  
   output$table_product <- renderDataTable({
 
     datatable(product_df())
 
+  })
+
+# timeseries --------------------------------------------------------------
+    
+  output$table_test <- renderDataTable({
+    
+    datatable(df_daily())
+    
+  })
+  
+  output$plot_ts <- renderPlotly({
+    
+    if (input$level == "week") {    
+      
+      df <- df_daily() %>% 
+                    mutate(week = year(order_purchase_date) * 100 + isoweek(order_purchase_date)) %>% 
+                    select(-order_purchase_date) %>% 
+                    group_by(week) %>% 
+                    summarize_all(., sum)
+      
+    } else if (input$level == "month") {
+      
+      df <- df_daily() %>% 
+        mutate(month = year(order_purchase_date) * 100 + month(order_purchase_date)) %>% 
+        select(-order_purchase_date) %>% 
+        group_by(month) %>% 
+        summarize_all(., sum)
+      
+    } else {
+      
+      df <- df_daily() %>% 
+        mutate(day = order_purchase_date)
+    }
+
+    #FIXME: use inputs as columns
+    plot_ly(df, x = ~!!input$level, y = ~!!input$kpi,
+            type = "bar")
+    
   })
 }

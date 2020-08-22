@@ -14,8 +14,8 @@ sidebar <- shinydashboard::dashboardSidebar(
   
   shiny::sliderInput(inputId = 'time',
                      label = 'Time:',
-                     min = min(as_date(data$olist_orders_dataset$order_purchase_timestamp)),
-                     max = max(as_date(data$olist_orders_dataset$order_purchase_timestamp)),
+                     min = min(as_date(daily_df$order_purchase_date)),
+                     max = max(as_date(daily_df$order_purchase_date)),
                      value = c(as_date("2017-07-01"), as_date("2018-07-01"))
   ),
   
@@ -26,6 +26,10 @@ sidebar <- shinydashboard::dashboardSidebar(
     shinydashboard::menuItem(text = 'Dashboard', tabName = 'dash',
                              icon = shiny::icon("compress")),
     shinydashboard::menuItem(text = 'Products', tabName = 'prod',
+                             icon = shiny::icon("compress")),
+    shinydashboard::menuItem(text = 'Time Series', tabName = 'ts',
+                             icon = shiny::icon("compress")),
+    shinydashboard::menuItem(text = 'Forecast', tabName = 'fc',
                              icon = shiny::icon("compress"))
     
   ),
@@ -59,21 +63,19 @@ body <- shinydashboard::dashboardBody(
   
   shinydashboard::tabItems(
     
-    # Dashboard body: tab1 --------------------------------------------------
-    
     shinydashboard::tabItem(
       
       tabName = "dash",
       
       fluidRow(
       valueBoxOutput("box_orders"),
-      valueBoxOutput("box_deliveries"),
-      valueBoxOutput("box_success")
+      valueBoxOutput("box_revenue"),
+      valueBoxOutput("box_revenue_order")
       )
       ,fluidRow(
-        valueBoxOutput("box_revenue"),
+        valueBoxOutput("box_margin"),
         valueBoxOutput("box_profit"),
-        valueBoxOutput("box_margin")
+        valueBoxOutput("box_profit_order")
       )
       
       ),
@@ -88,9 +90,45 @@ body <- shinydashboard::dashboardBody(
           width = 12,
           dataTableOutput("table_product"))
       )
+    ),
+    
+    shinydashboard::tabItem(
       
+      tabName = "ts",
       
+      fluidRow(
+        box(title = "",
+            status = "primary",
+            width = 2,
+            selectInput("kpi",
+                        "Choose KPI:",
+                        choices = colnames(daily_df[-1]),
+                        selected = "Orders"),
+            radioButtons("level",
+                         "Choose Time Level:",
+                         choices = c("day", "week", "month"),
+                         selected = "day")
+            ),
+        box(title = "",
+            status = "primary",
+            width = 10,
+            plotlyOutput("plot_ts"))
+      ),
+      
+      fluidRow(
+        box(title = "",
+            status = "primary",
+            width = 12,
+            dataTableOutput("table_test"))
+      )
     )
+    
+    # ,shinydashboard::tabItem(
+    # 
+    #   tabName = "fc",
+    # 
+    #   box(includeHTML("forecasting.html"))
+    # )
     
   )
   
