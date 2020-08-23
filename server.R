@@ -16,6 +16,15 @@ server <- function(input, output, session) {
     
     data$olist_order_items_dataset %>%
       filter(order_id %in% orders_purchase()$order_id)
+    
+  })
+  
+  orders_payments <- reactive({
+    
+    data$olist_order_payments_dataset %>% 
+      left_join(orders_purchase() %>% select(order_id, order_purchase_date), by = "order_id") %>% 
+      filter(!is.na(order_purchase_date))
+    
   })
   
   product_df <- reactive({
@@ -26,7 +35,8 @@ server <- function(input, output, session) {
                 Freight = sum(freight_value)) %>% 
       mutate(Profit = round(Revenue - Freight,2),
              Margin = paste0(round(Profit / Revenue*100,2),"%")) %>% 
-      left_join(data$olist_products_dataset %>% select(product_id, product_category_name), by = "product_id") 
+      left_join(data$olist_products_dataset %>% select(product_id, product_category_name), by = "product_id") %>% 
+      arrange(desc(Revenue))
   })
   
   df_daily <- reactive({
@@ -42,9 +52,10 @@ server <- function(input, output, session) {
 
   output$box_orders <- renderValueBox({
     valueBox(
-      sum(df_daily()$Orders),
+      nice_num(sum(df_daily()$Orders)),
       "Orders", 
-      color = "purple"
+      color = "purple",
+      icon = icon("shopping-cart")
     )
   })
   
@@ -52,7 +63,9 @@ server <- function(input, output, session) {
     valueBox(
       bd(sum(df_daily()$Revenue) / sum(df_daily()$Orders)),
       "Revenue per Order", 
-      color = "purple"
+      color = "purple",
+      icon = icon("dollar-sign")
+      
     )
   })
   
@@ -60,7 +73,8 @@ server <- function(input, output, session) {
     valueBox(
       bd(sum(df_daily()$Profit) / sum(df_daily()$Orders)),
       "Profit per Order", 
-      color = "purple"
+      color = "purple",
+      icon = icon("money")
     )
   })
   
@@ -68,7 +82,8 @@ server <- function(input, output, session) {
     valueBox(
       bd(sum(df_daily()$Revenue)),
       "Revenue", 
-      color = "purple"
+      color = "purple",
+      icon = icon("dollar-sign")
     )
   })
   
@@ -76,7 +91,8 @@ server <- function(input, output, session) {
     valueBox(
       bd(sum(df_daily()$Profit)),
       "Profit", 
-      color = "purple"
+      color = "purple",
+      icon = icon("money")
     )
   })
   
@@ -84,7 +100,35 @@ server <- function(input, output, session) {
     valueBox(
       paste0(round(sum(df_daily()$Profit) / sum(df_daily()$Revenue)*100,1),"%"),
       "Margin", 
-      color = "purple"
+      color = "purple",
+      icon = icon("percentage")
+    )
+  })
+  
+  output$box_credit <- renderValueBox({
+    valueBox(
+      nice_num((orders_payments() %>% filter(payment_type == "credit_card") %>% count())$n),
+      "Credit Card Payments",
+      color = "purple",
+      icon = icon("credit-card")
+    )
+  })
+  
+  output$box_boleto <- renderValueBox({
+    valueBox(
+      nice_num((orders_payments() %>% filter(payment_type == "boleto") %>% count())$n),
+      "Ticket Payments",
+      color = "purple",
+      icon = icon("ticket")
+    )
+  })
+  
+  output$box_voucher <- renderValueBox({
+    valueBox(
+      nice_num((orders_payments() %>% filter(payment_type == "voucher") %>% count())$n),
+      "Voucher Payments",
+      color = "purple",
+      icon = icon("vimeo")
     )
   })
   
@@ -92,9 +136,33 @@ server <- function(input, output, session) {
 # product -----------------------------------------------------------------
 
   
-  output$table_product <- renderDataTable({
+    
+    output$plot_product <- renderPlotly({
+    
+      if (length(input$cat) == 0) {
+        
+      product_df() %>% 
+        slice(1:20) %>% 
+        plot_ly(., x = ~reorder(paste0(substr(product_id,1,5),"..."), -Revenue), y = ~Revenue,
+                type = "bar", color = ~product_category_name) %>% 
+        layout(xaxis = list(title = ""))
+        
+      } else {
+        
+        product_df() %>% 
+          filter(product_category_name %in% input$cat) %>% 
+          slice(1:20) %>% 
+          plot_ly(., x = ~reorder(paste0(substr(product_id,1,5),"..."), -Revenue), y = ~Revenue,
+                  type = "bar", color = ~product_category_name) %>% 
+          layout(xaxis = list(title = ""))
+        
+      }
+    
+  })
+  
+  output$table_product <- renderDataTable(server = FALSE,{
 
-    datatable(product_df())
+    nice_dt(product_df())
 
   })
 
@@ -102,7 +170,7 @@ server <- function(input, output, session) {
     
   output$table_test <- renderDataTable({
     
-    datatable(df_daily())
+    nice_dt(df_daily())
     
   })
   
@@ -111,7 +179,7 @@ server <- function(input, output, session) {
     if (input$level == "week") {    
       
       df <- df_daily() %>% 
-                    mutate(week = year(order_purchase_date) * 100 + isoweek(order_purchase_date)) %>% 
+                    mutate(week = format.Date(order_purchase_date, "%Y%V")) %>% 
                     select(-order_purchase_date) %>% 
                     group_by(week) %>% 
                     summarize_all(., sum)
@@ -119,7 +187,7 @@ server <- function(input, output, session) {
     } else if (input$level == "month") {
       
       df <- df_daily() %>% 
-        mutate(month = year(order_purchase_date) * 100 + month(order_purchase_date)) %>% 
+        mutate(month = format.Date(order_purchase_date, "%Y%m")) %>% 
         select(-order_purchase_date) %>% 
         group_by(month) %>% 
         summarize_all(., sum)
@@ -129,10 +197,45 @@ server <- function(input, output, session) {
       df <- df_daily() %>% 
         mutate(day = order_purchase_date)
     }
+    
+    df <- df %>% 
+      mutate(Margin = Profit / Revenue,
+             "Revenue per Order" = Revenue / Orders,
+             "Profit per Order" = Profit / Orders) %>% 
+      rename(x = input$level,
+             y = input$kpi) 
 
-    #FIXME: use inputs as columns
-    plot_ly(df, x = ~!!input$level, y = ~!!input$kpi,
-            type = "bar")
+    plot_ly(df, x = ~x, y = ~y,
+            type = "bar") %>% 
+      layout(xaxis = list(title = input$level),
+             yaxis = list(title = input$kpi))
     
   })
+
+# payments ----------------------------------------------------------------
+  
+  output$plot_payments <- renderPlotly({
+    
+    orders_payments() %>% 
+      group_by(payment_type) %>% 
+      count() %>% 
+      plot_ly(., labels = ~payment_type, values = ~n, type = 'pie')
+    
+  })
+  
+  output$table_payments <- renderDataTable({
+
+    nice_dt(orders_payments())
+
+  })
+  
+
+# forecast ----------------------------------------------------------------
+
+  output$forecasting <- renderUI({
+    
+    includeHTML(path = "forecasting.html")
+    
+  })  
+  
 }

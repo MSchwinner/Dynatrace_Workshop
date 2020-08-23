@@ -18,6 +18,23 @@ import_csv_data <- function(path = NULL) {
 
 bd <- function(x) {
   
-  y <- paste0(format(round(x,1), big.mark = ","), " B$")
+  paste0(format(round(x,1), big.mark = ","), " B$")
+  
+}
+
+nice_num <- function(x) {
+  
+  format(x, big.mark = ",")
+  
+}
+
+nice_dt <- function(df) {
+  
+  datatable(df,
+            extensions = "Buttons",
+            rownames = FALSE,
+            options = list(scrollX = TRUE,
+                          dom = "Bfrtip",
+                          buttons = list('csv', 'excel')))
   
 }

@@ -26,18 +26,19 @@ sidebar <- shinydashboard::dashboardSidebar(
     shinydashboard::menuItem(text = 'Dashboard', tabName = 'dash',
                              icon = shiny::icon("compress")),
     shinydashboard::menuItem(text = 'Products', tabName = 'prod',
-                             icon = shiny::icon("compress")),
+                             icon = shiny::icon("dolly")),
     shinydashboard::menuItem(text = 'Time Series', tabName = 'ts',
-                             icon = shiny::icon("compress")),
-    shinydashboard::menuItem(text = 'Forecast', tabName = 'fc',
-                             icon = shiny::icon("compress"))
+                             icon = shiny::icon("chart-line")),
+    shinydashboard::menuItem(text = 'Payments', tabName = 'pay',
+                             icon = shiny::icon("money")),
+    shinydashboard::menuItem(text = 'Business Case: Forecast', tabName = 'fc',
+                             icon = shiny::icon("random"))
     
   ),
   
   shiny::br(),
   
-  shiny::h4(#shiny::HTML('&emsp;'),shiny::HTML('&emsp;'),
-            shiny::img(src = "https://images.endeavor.org.br/uploads/2018/05/11180447/0022_olist.png",
+  shiny::h4(shiny::img(src = "https://images.endeavor.org.br/uploads/2018/05/11180447/0022_olist.png",
              height = "60px")),
   
   shiny::br(),
@@ -57,11 +58,13 @@ sidebar <- shinydashboard::dashboardSidebar(
 
 # Dashboard body ---------------------------------------------------------------
 
-# Initialize dashboard body ----------------------------------------------------
-
 body <- shinydashboard::dashboardBody(
   
+  tags$head(tags$style(HTML(".small-box {height: 150px}"))),
+  
   shinydashboard::tabItems(
+
+# dashboard ---------------------------------------------------------------
     
     shinydashboard::tabItem(
       
@@ -77,12 +80,35 @@ body <- shinydashboard::dashboardBody(
         valueBoxOutput("box_profit"),
         valueBoxOutput("box_profit_order")
       )
+      ,fluidRow(
+        valueBoxOutput("box_credit"),
+        valueBoxOutput("box_boleto"),
+        valueBoxOutput("box_voucher")
+      )
       
       ),
-    
+
+# products ----------------------------------------------------------------
+
     shinydashboard::tabItem(
       
       tabName = "prod",
+      
+      fluidRow(
+        box(title = "",
+            status = "primary",
+            width = 2,
+            selectInput("cat", "Filter categories:",
+                        choices = unique(data$olist_products_dataset$product_category_name),
+                        selected = "",
+                        multiple = TRUE)
+            ),
+        box(title = "Top 20 Products by Revenue",
+            status = "primary",
+            width = 10,
+            plotlyOutput("plot_product")
+        )
+      ),
       
       fluidRow(
       box(title = "",
@@ -91,6 +117,8 @@ body <- shinydashboard::dashboardBody(
           dataTableOutput("table_product"))
       )
     ),
+
+# timeseries --------------------------------------------------------------
     
     shinydashboard::tabItem(
       
@@ -102,14 +130,14 @@ body <- shinydashboard::dashboardBody(
             width = 2,
             selectInput("kpi",
                         "Choose KPI:",
-                        choices = colnames(daily_df[-1]),
+                        choices = c(colnames(daily_df[-1]),"Margin", "Revenue per Order", "Profit per Order"),
                         selected = "Orders"),
             radioButtons("level",
                          "Choose Time Level:",
                          choices = c("day", "week", "month"),
                          selected = "day")
             ),
-        box(title = "",
+        box(title = "Time Series Analysis",
             status = "primary",
             width = 10,
             plotlyOutput("plot_ts"))
@@ -122,13 +150,43 @@ body <- shinydashboard::dashboardBody(
             dataTableOutput("table_test"))
       )
     )
-    
-    # ,shinydashboard::tabItem(
-    # 
-    #   tabName = "fc",
-    # 
-    #   box(includeHTML("forecasting.html"))
-    # )
+
+# payments ----------------------------------------------------------------
+
+      ,shinydashboard::tabItem(
+
+        tabName = "pay",
+        
+        fluidRow(
+          box(
+            title = "Frequency of Payment Types",
+            status = "primary",
+            width = 12,
+            plotlyOutput("plot_payments")
+          )
+        ),
+
+        fluidRow(
+          box(
+            title = "",
+            status = "primary",
+            width = 12,
+            dataTableOutput("table_payments")
+          )
+        )
+
+      )
+
+# forecast ----------------------------------------------------------------
+
+      ,shinydashboard::tabItem(
+        
+        tabName = "fc",
+        
+        htmlOutput("forecasting")
+        
+        )
+
     
   )
   
