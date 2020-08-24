@@ -1,0 +1,349 @@
+---
+title: "Olist Marketing Funnel"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+
+```{r packages, include = FALSE, message = FALSE}
+library(tidyverse)
+library(skimr)
+library(stringr)
+library(lubridate)
+library(DT)
+library(plotly)
+
+source("R/functions.R")
+```
+
+# Data import
+
+Import data in list via function Calll to import_csv_data().
+
+```{r data import, cache = TRUE}
+data <- import_csv_data(path = "Olist_data/")
+data_marketing <- import_csv_data(path = "Olist_Marketing_data/")
+```
+
+# Overview of data
+
+Source https://www.kaggle.com/jungjoonlee/eda-with-ecommerce-marketplace-seller-side
+
+
+>Marketing Qualified Lead (MQL) means a potential reseller/manufacturer who has an interest in selling their products on Olist. After a MQL filled a form on landing page to sign up for seller, a Sales Development Representative(SDR) contacted the MQL and gathered more information about the lead. Then a Sales Representative(SR) consulted the MQL. So interaction between SDRs/SRs and MQLs can affect conversion from MQLs to sellers. A MQL who finally signed up for seller is called a closed deal.
+
+## Closed Deals
+
+```{r}
+skim(data_marketing$olist_closed_deals_dataset)
+head(data_marketing$olist_closed_deals_dataset) %>% datatable(., rownames = FALSE, options = list(scrollX = TRUE))
+```
+
+## MQL
+
+```{r}
+skim(data_marketing$olist_marketing_qualified_leads_dataset)
+head(data_marketing$olist_marketing_qualified_leads_dataset) %>% datatable(., rownames = FALSE, options = list(scrollX = TRUE))
+```
+
+# EDA Closed Deals
+
+## Data wrangling
+
+```{r}
+# merge dataframes
+df_deals <- data_marketing$olist_closed_deals_dataset %>% 
+  right_join(data_marketing$olist_marketing_qualified_leads_dataset, by = "mql_id")
+
+# createa monthly dataframe for deals by origin by first contact date
+df_deals_monthly <- df_deals %>% 
+  mutate(first_contact_month = format.Date(as_date(first_contact_date), "%Y%m"),
+         deal_closed = if_else(is.na(seller_id), 0, 1),
+         origin = if_else(origin == "", "unknown", as.character(origin))) %>% 
+  group_by(origin, first_contact_month) %>% 
+  summarize(leads = n(),
+            closed_deals = sum(deal_closed)) %>% 
+  ungroup()
+  
+```
+
+# Analysis Leads
+
+## Leads Overall
+
+```{r}
+
+plot_leads <- df_deals_monthly %>% 
+  group_by(first_contact_month) %>% 
+  summarize(leads = sum(leads)) %>% 
+  ggplot(., aes(x = first_contact_month, y = leads, group = 1)) +
+  geom_line() +
+  geom_point() +
+  theme_bw() +
+  labs(x = "", y = "Number of Leads", colour = "origin")
+
+```
+
+```{r, fig.width=11}
+ggplotly(plot_leads)
+
+#plot_leads
+```
+
+
+## Leads by Origin
+
+```{r}
+
+plot_leads_origin <- df_deals_monthly %>% 
+  select(-closed_deals) %>% 
+  pivot_wider(., names_from = origin, values_from = leads) %>% 
+  replace(is.na(.), 0) %>% 
+  ggplot(., aes(x = first_contact_month, group = 1)) +
+  geom_line(aes(y = direct_traffic, color = "direct_traffic")) +
+  geom_line(aes(y = display, color = "display"))+
+  geom_line(aes(y = email, color = "email")) +
+  geom_line(aes(y = organic_search, color = "organic_search")) +
+  geom_line(aes(y = paid_search, color = "paid_search")) +
+  geom_line(aes(y = referral, color = "referral")) +
+  geom_line(aes(y = social, color = "social")) +
+  geom_line(aes(y = other_publicities, color = "other_publicities")) +
+  geom_line(aes(y = other, color = "other")) +
+  geom_line(aes(y = unknown, color = "unknown")) +
+  geom_point(aes(y = direct_traffic, color = "direct_traffic")) +
+  geom_point(aes(y = display, color = "display"))+
+  geom_point(aes(y = email, color = "email")) +
+  geom_point(aes(y = organic_search, color = "organic_search")) +
+  geom_point(aes(y = paid_search, color = "paid_search")) +
+  geom_point(aes(y = referral, color = "referral")) +
+  geom_point(aes(y = social, color = "social")) +
+  geom_point(aes(y = other_publicities, color = "other_publicities")) +
+  geom_point(aes(y = other, color = "other")) +
+  geom_point(aes(y = unknown, color = "unknown")) +
+  theme_bw() +
+  labs(x = "", y = "Number of Leads", colour = "origin")
+```
+
+```{r, fig.width=11}
+ggplotly(plot_leads_origin)
+
+#plot_leads_origin
+```
+
+```{r}
+plot_bar_leads_origin <- df_deals_monthly %>% 
+  select(-closed_deals) %>% 
+  group_by(origin) %>% 
+  summarize(leads = sum(leads)) %>% 
+  ggplot(., aes(x = reorder(origin, -leads), y = leads, group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = ..y..), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Number of Leads", colour = "origin") +
+  scale_y_continuous(limits = c(0, 2350))
+```
+
+```{r, fig.width=11}
+ggplotly(plot_bar_leads_origin)
+
+#plot_bar_leads_origin
+```
+
+```{r}
+plot_bar_leads_origin_per <- df_deals_monthly %>% 
+  select(-closed_deals) %>% 
+  group_by(origin) %>% 
+  summarize(leads = sum(leads)) %>% 
+  ggplot(., aes(x = reorder(origin, -leads), y = leads / sum(leads), group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = paste0(round(..y.. * 100,1), "%")), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Number of Leads", colour = "origin") +
+  scale_y_continuous(labels=scales::percent, limits = c(0, 0.3)) 
+```
+
+```{r, fig.width=11}
+ggplotly(plot_bar_leads_origin_per)
+
+#plot_bar_leads_origin_per
+```
+
+# Analysis Closed Deals
+
+## Closed Deals Overall
+
+```{r}
+
+plot_leads <- df_deals_monthly %>% 
+  group_by(first_contact_month) %>% 
+  summarize(leads = sum(closed_deals)) %>% 
+  ggplot(., aes(x = first_contact_month, y = leads, group = 1)) +
+  geom_line() +
+  geom_point() +
+  theme_bw() +
+  labs(x = "", y = "Number of Closed Deals", colour = "origin")
+
+```
+
+```{r, fig.width=11}
+ggplotly(plot_leads)
+
+# plot_leads
+```
+
+
+## Leads by Origin
+
+```{r}
+
+plot_leads_origin <- df_deals_monthly %>% 
+  select(-leads) %>% 
+  pivot_wider(., names_from = origin, values_from = closed_deals) %>% 
+  replace(is.na(.), 0) %>% 
+  ggplot(., aes(x = first_contact_month, group = 1)) +
+  geom_line(aes(y = direct_traffic, color = "direct_traffic")) +
+  geom_line(aes(y = display, color = "display"))+
+  geom_line(aes(y = email, color = "email")) +
+  geom_line(aes(y = organic_search, color = "organic_search")) +
+  geom_line(aes(y = paid_search, color = "paid_search")) +
+  geom_line(aes(y = referral, color = "referral")) +
+  geom_line(aes(y = social, color = "social")) +
+  geom_line(aes(y = other_publicities, color = "other_publicities")) +
+  geom_line(aes(y = other, color = "other")) +
+  geom_line(aes(y = unknown, color = "unknown")) +
+  geom_point(aes(y = direct_traffic, color = "direct_traffic")) +
+  geom_point(aes(y = display, color = "display"))+
+  geom_point(aes(y = email, color = "email")) +
+  geom_point(aes(y = organic_search, color = "organic_search")) +
+  geom_point(aes(y = paid_search, color = "paid_search")) +
+  geom_point(aes(y = referral, color = "referral")) +
+  geom_point(aes(y = social, color = "social")) +
+  geom_point(aes(y = other_publicities, color = "other_publicities")) +
+  geom_point(aes(y = other, color = "other")) +
+  geom_point(aes(y = unknown, color = "unknown")) +
+  theme_bw() +
+  labs(x = "", y = "Number of Closed Deals", colour = "origin")
+```
+
+```{r, fig.width=11}
+ggplotly(plot_leads_origin)
+
+# plot_leads_origin
+```
+
+```{r}
+plot_bar_leads_origin <- df_deals_monthly %>% 
+  select(-leads) %>% 
+  group_by(origin) %>% 
+  summarize(leads = sum(closed_deals)) %>% 
+  ggplot(., aes(x = reorder(origin, -leads), y = leads, group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = ..y..), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Number of Closed Deals", colour = "origin") +
+  scale_y_continuous(limits = c(0, 300))
+```
+
+```{r, fig.width=11}
+ggplotly(plot_bar_leads_origin)
+
+# plot_bar_leads_origin
+```
+
+```{r}
+plot_bar_leads_origin_per <- df_deals_monthly %>% 
+  select(-leads) %>% 
+  group_by(origin) %>% 
+  summarize(closed_deals = sum(closed_deals)) %>% 
+  ggplot(., aes(x = reorder(origin, -closed_deals), y = closed_deals / sum(closed_deals), group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = paste0(round(..y.. * 100,1), "%")), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Number of Closed Deals", colour = "origin") +
+  scale_y_continuous(labels=scales::percent, limits = c(0, 0.35)) 
+```
+
+```{r, fig.width=11}
+ggplotly(plot_bar_leads_origin_per)
+
+# plot_bar_leads_origin_per
+```
+
+# Conversion Rate
+
+## Closed Deals Overall
+
+```{r}
+
+plot_conversion <- df_deals_monthly %>% 
+  group_by(first_contact_month) %>% 
+  summarize(leads = sum(leads),
+            closed_deals = sum(closed_deals)) %>% 
+  mutate(conversion_rate = closed_deals / leads) %>% 
+  ggplot(., aes(x = first_contact_month, y = conversion_rate, group = 1)) +
+  geom_line() +
+  geom_point() +
+  theme_bw() +
+  labs(x = "", y = "Conversion Rate", colour = "origin") +
+  scale_y_continuous(labels=scales::percent) 
+
+```
+
+```{r, fig.width=11}
+ggplotly(plot_conversion)
+
+# plot_conversion
+```
+
+## Conversion Rate by Origin
+
+### 2017
+
+```{r}
+plot_bar_conversion_origin_2017 <- df_deals_monthly %>% 
+  filter(substr(first_contact_month,1,4) == "2017") %>% 
+  group_by(origin) %>% 
+  summarize(leads = sum(leads),
+            closed_deals = sum(closed_deals)) %>% 
+  mutate(conversion_rate = closed_deals / leads) %>% 
+  ggplot(., aes(x = reorder(origin, -conversion_rate), y = conversion_rate, group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = paste0(round(..y.. * 100,1), "%")), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Conversion Rate", colour = "origin") +
+  scale_y_continuous(labels=scales::percent, limits = c(0, 0.20))
+```
+
+```{r, fig.width=11, fig.height=3}
+ggplotly(plot_bar_conversion_origin_2017)
+
+# plot_bar_conversion_origin_2017
+```
+
+### 2018
+
+```{r}
+plot_bar_conversion_origin_2018 <- df_deals_monthly %>% 
+  filter(substr(first_contact_month,1,4) == "2018") %>% 
+  group_by(origin) %>% 
+  summarize(leads = sum(leads),
+            closed_deals = sum(closed_deals)) %>% 
+  mutate(conversion_rate = closed_deals / leads) %>% 
+  ggplot(., aes(x = reorder(origin, -conversion_rate), y = conversion_rate, group = 1)) +
+  geom_col(aes(fill = origin))+
+  geom_text(aes(label = paste0(round(..y.. * 100,1), "%")), vjust = -1) +
+  theme_bw() +
+  labs(x = "", y = "Conversion Rate", colour = "origin") +
+  scale_y_continuous(labels=scales::percent, limits = c(0, 0.30))
+```
+
+```{r, fig.width=11, fig.height=3}
+ggplotly(plot_bar_conversion_origin_2018)
+
+# plot_bar_conversion_origin_2018
+```
