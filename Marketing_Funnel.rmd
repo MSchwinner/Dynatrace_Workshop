@@ -347,3 +347,155 @@ ggplotly(plot_bar_conversion_origin_2018)
 
 # plot_bar_conversion_origin_2018
 ```
+
+# Seller Characteristics
+
+## Data Wrangling
+
++ For 462 Sellers with closed deals no corresponding purchase information (55% of all sellers)
++ empty ("") observations in business_segment, lead_type, business_type, origin
+
+```{r}
+df_deals <- df_deals %>% 
+  mutate(deal_closed = if_else(is.na(seller_id), 0, 1)) # add boolean for closed deals
+
+df_seller <- df_deals %>% 
+  left_join(data$olist_order_items_dataset, by = "seller_id") %>% 
+  filter(!is.na(seller_id)) %>% 
+  group_by(seller_id, business_segment, lead_type, business_type, origin) %>% 
+  summarize(closed_deals = sum(deal_closed),
+            revenue = sum(price)) %>% 
+  ungroup()
+
+skim(df_seller)
+```
+
+For first analysis: drop all sellers with NA Revenue and transform empty observations to "unknown".
+
+```{r}
+df_seller_man <- df_seller %>% 
+  filter(!is.na(revenue)) %>% 
+  mutate(business_segment = if_else(business_segment == "", "unknown", as.character(business_segment)),
+         lead_type = if_else(lead_type == "", "unknown", as.character(lead_type)),
+         business_type = if_else(business_type == "", "unknown", as.character(business_type)),
+         origin = if_else(origin == "", "unknown", as.character(origin)),
+         Revenue_per_Order = revenue / closed_deals) %>% 
+  mutate_if(is.character, as.factor)
+
+skim(df_seller_man)
+```
+
+## Business Segment
+
+```{r}
+df_business_segment <- df_seller_man %>% 
+  group_by(business_segment) %>% 
+  summarize(revenue = sum(revenue),
+            closed_deals = sum(closed_deals)) %>% 
+  mutate(Revenue_per_Order = revenue / closed_deals,
+         segment_small = substr(business_segment, 1, 6)) %>% 
+  ungroup() %>% 
+  arrange(desc(Revenue_per_Order))
+```
+
+```{r}
+df_business_segment %>% datatable(., rownames = FALSE, options = list(scrollX = TRUE))
+```
+
+### Revene per Order
+
+```{r, fig.width=10}
+ggplot(df_business_segment, aes(x = reorder(segment_small, -Revenue_per_Order), y = Revenue_per_Order)) + 
+  geom_col() +
+  theme_bw() +
+  labs(x = "Business segment", y = "Revenue per Order")
+```
+
+### Orders
+
+```{r, fig.width=10}
+ggplot(df_business_segment, aes(x = reorder(segment_small, -closed_deals), y = closed_deals)) + 
+  geom_col() +
+  theme_bw() +
+  labs(x = "Business segment", y = "Number of Orders")
+```
+
+### Combined
+
+```{r, fig.width=10}
+ggplot(df_business_segment, aes(x = closed_deals, y = Revenue_per_Order)) + 
+  geom_text(aes(label = segment_small)) +
+  theme_bw() +
+  labs(x = "Number of Orders", y = "Revenue per Order")
+```
+
+## Lead Type
+
+```{r}
+df_lead_type <- df_seller_man %>% 
+  group_by(lead_type) %>% 
+  summarize(revenue = sum(revenue),
+            closed_deals = sum(closed_deals)) %>% 
+  mutate(Revenue_per_Order = revenue / closed_deals,
+         lead_small = substr(lead_type, 1, 5)) %>% 
+  ungroup() %>% 
+  arrange(desc(Revenue_per_Order))
+```
+
+```{r}
+df_lead_type %>% datatable(., rownames = FALSE, options = list(scrollX = TRUE))
+```
+
+### Revenue 
+
+```{r, fig.width=10}
+ggplot(df_lead_type, aes(x = reorder(lead_type, -revenue), y = revenue)) + 
+  geom_col() +
+  theme_bw() +
+  labs(x = "Lead Type", y = "Revenue")
+```
+
+### Revene per Order
+
+```{r, fig.width=10}
+ggplot(df_lead_type, aes(x = reorder(lead_type, -Revenue_per_Order), y = Revenue_per_Order)) + 
+  geom_col() +
+  theme_bw() +
+  labs(x = "Lead Type", y = "Revenue per Order")
+```
+
+### Orders
+
+```{r, fig.width=10}
+ggplot(df_lead_type, aes(x = reorder(lead_type, -closed_deals), y = closed_deals)) + 
+  geom_col() +
+  theme_bw() +
+  labs(x = "Lead Type", y = "Number of Orders")
+```
+
+### Combined
+
+```{r, fig.width=10}
+ggplot(df_lead_type, aes(x = closed_deals, y = Revenue_per_Order)) + 
+  geom_text(aes(label = lead_type)) +
+  theme_bw() +
+  labs(x = "Number of Orders", y = "Revenue per Order")
+```
+
+## Regression Analysis
+
+```{r, fig.width = 10}
+# relevel business segemnt for better comparison
+df_seller_man <- within(df_seller_man,business_segment <- relevel(business_segment, ref = 2))
+
+lm_seller_deals <- lm(closed_deals ~ business_segment + lead_type + origin + business_type, data = df_seller_man)
+
+summary(lm_seller_deals)
+```
+
+```{r, fig.width = 10}
+lm_seller_revenue <- lm(Revenue_per_Order ~ business_segment + lead_type + origin + business_type, data = df_seller_man)
+
+summary(lm_seller_revenue)
+```
+
